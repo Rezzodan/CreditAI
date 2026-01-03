@@ -61,4 +61,12 @@ Thumbs.db
 .coverage
 htmlcov/
 
+# Temporary documentation files
+PUSH_INSTRUCTIONS.md
+SSH_KEY.txt
+SSH_QUICK_SETUP.md
+SSH_SETUP.md
+GITHUB_QUICKSTART.md
+GITHUB_SETUP.md
+
 
