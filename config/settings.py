@@ -18,8 +18,8 @@ class Settings(BaseSettings):
     
     # ИИ (Ollama)
     OLLAMA_HOST: str = os.getenv("OLLAMA_HOST", "http://localhost:11434")
-    OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "qwen2.5-coder:7b")
-    OLLAMA_MODEL_TEXTS: str = os.getenv("OLLAMA_MODEL_TEXTS", "saiga3:8b")
+    OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "qwen2.5:1.5b")
+    OLLAMA_MODEL_TEXTS: str = os.getenv("OLLAMA_MODEL_TEXTS", "qwen2.5:1.5b")
     
     # Битрикс24
     BITRIX_WEBHOOK_URL: str = os.getenv("BITRIX_WEBHOOK_URL", "")
@@ -28,8 +28,8 @@ class Settings(BaseSettings):
     
     # Очередь задач
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-    CELERY_BROKER_URL: str = os.getenv("CELERY_BROKER_URL", REDIS_URL)
-    CELERY_RESULT_BACKEND: str = os.getenv("CELERY_RESULT_BACKEND", REDIS_URL)
+    CELERY_BROKER_URL: str = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
+    CELERY_RESULT_BACKEND: str = os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/0")
     
     # Безопасность
     SECRET_KEY: str = os.getenv("SECRET_KEY", "change-in-production")
@@ -47,9 +47,13 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = True
+        extra = "ignore"  # Игнорировать дополнительные поля из .env
 
 
 settings = Settings()
+
+
+
 
 
 

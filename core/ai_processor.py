@@ -3,7 +3,7 @@
 """
 import requests
 import json
-from typing import Dict, Optional, Any
+from typing import Dict, Optional, Any, List
 from config.settings import settings
 from config.prompts import (
     get_base_extraction_prompt,
@@ -184,6 +184,9 @@ class AIProcessor:
             return response.status_code == 200
         except:
             return False
+
+
+
 
 
 

@@ -48,6 +48,7 @@ async def process_pdf(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     deal_id: Optional[int] = Form(None),
+    client_id: Optional[str] = Form(None),
     callback_url: Optional[str] = Form(None)
 ):
     """
@@ -56,6 +57,7 @@ async def process_pdf(
     Args:
         file: PDF файл
         deal_id: ID сделки в Битрикс24
+        client_id: ID клиента (для группировки отчётов)
         callback_url: URL для уведомления о завершении
         
     Returns:
@@ -87,7 +89,8 @@ async def process_pdf(
         report = db_repo.create_report(
             filename=file.filename,
             file_size=file.size or 0,
-            bitrix_deal_id=deal_id
+            bitrix_deal_id=deal_id,
+            client_id=client_id
         )
         task_id = report.id
     except Exception as e:
@@ -261,18 +264,22 @@ async def get_status(task_id: str):
     if not report:
         raise HTTPException(status_code=404, detail="Отчёт не найден")
     
-    # Получаем документы
+    # Получаем документы отдельным запросом (чтобы избежать DetachedInstanceError)
     documents = []
-    if report.documents:
-        documents = [
-            {
-                'id': doc.id,
-                'type': doc.document_type,
-                'filename': doc.filename,
-                'download_url': f"/api/download/{doc.id}"
-            }
-            for doc in report.documents
-        ]
+    try:
+        docs = db_repo.get_documents_by_report(task_id)
+        if docs:
+            documents = [
+                {
+                    'id': doc.id,
+                    'type': doc.document_type,
+                    'filename': doc.filename,
+                    'download_url': f"/api/download/{doc.id}"
+                }
+                for doc in docs
+            ]
+    except Exception:
+        pass  # Если не удалось получить документы, просто пропускаем
     
     return {
         'task_id': task_id,
@@ -354,4 +361,129 @@ async def get_reports(deal_id: Optional[int] = None, limit: int = 50):
         }
         for report in reports
     ]
+
+
+@router.post("/merge-reports")
+async def merge_reports(client_id: str):
+    """
+    Объединяет все отчёты одного клиента от разных БКИ в один сводный отчёт
+    
+    Args:
+        client_id: ID клиента
+        
+    Returns:
+        Информация о сводном отчёте и путь к документу
+    """
+    from services.merger import merge_bki_reports, decide_merged_tariff, generate_tariff_explanation
+    from services.merged_report_generator import generate_merged_word_report
+    import os
+    
+    # Получаем все отчёты клиента
+    reports = db_repo.get_reports_by_client(client_id)
+    
+    if not reports:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Не найдено отчётов для клиента {client_id}"
+        )
+    
+    if len(reports) < 2:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Для объединения нужно минимум 2 отчёта, найдено: {len(reports)}"
+        )
+    
+    # Проверяем что все отчёты обработаны
+    incomplete = [r for r in reports if r.processing_status != 'completed']
+    if incomplete:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Не все отчёты обработаны. Ожидают завершения: {len(incomplete)}"
+        )
+    
+    try:
+        # Объединяем данные
+        merged_data = merge_bki_reports(reports)
+        
+        # Определяем тариф
+        final_tariff = decide_merged_tariff(merged_data)
+        
+        # Генерируем объяснение
+        explanation = generate_tariff_explanation(merged_data, final_tariff)
+        
+        # Создаём Word документ
+        doc_path = generate_merged_word_report(merged_data, final_tariff, explanation)
+        
+        # Получаем размер файла
+        file_size = os.path.getsize(doc_path)
+        
+        # Сохраняем в БД
+        merged_report = db_repo.create_merged_report(
+            client_id=client_id,
+            client_name=merged_data["client_name"],
+            source_report_ids=[r.id for r in reports],
+            bki_types=merged_data["summary"]["bki_types"],
+            avg_credit_score=merged_data["summary"]["avg_credit_score"],
+            total_debt=merged_data["summary"]["total_debt"],
+            total_active_accounts=merged_data["summary"]["total_active_accounts"],
+            max_delinquency_days=merged_data["summary"]["max_delinquency_days"],
+            final_tariff=final_tariff,
+            document_path=doc_path,
+            file_size=file_size,
+            bitrix_deal_id=reports[0].bitrix_deal_id if reports else None
+        )
+        
+        return {
+            "status": "success",
+            "merged_report_id": merged_report.id,
+            "client_id": client_id,
+            "client_name": merged_data["client_name"],
+            "reports_merged": len(reports),
+            "bki_types": merged_data["summary"]["bki_types"],
+            "summary": {
+                "avg_credit_score": merged_data["summary"]["avg_credit_score"],
+                "total_debt": merged_data["summary"]["total_debt"],
+                "total_active_accounts": merged_data["summary"]["total_active_accounts"],
+                "max_delinquency_days": merged_data["summary"]["max_delinquency_days"]
+            },
+            "final_tariff": final_tariff,
+            "document_path": doc_path,
+            "download_url": f"/download/{merged_report.id}"
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Ошибка при объединении отчётов: {str(e)}"
+        )
+
+
+@router.get("/client/{client_id}/reports")
+async def get_client_reports(client_id: str):
+    """
+    Получает все отчёты клиента
+    
+    Args:
+        client_id: ID клиента
+        
+    Returns:
+        Список всех отчётов клиента
+    """
+    reports = db_repo.get_reports_by_client(client_id)
+    
+    return {
+        "client_id": client_id,
+        "total_reports": len(reports),
+        "reports": [
+            {
+                "id": r.id,
+                "bki_type": r.bki_type,
+                "status": r.processing_status,
+                "upload_date": r.upload_date.isoformat() if r.upload_date else None,
+                "credit_score": r.extracted_data[0].credit_score if r.extracted_data and len(r.extracted_data) > 0 else None,
+                "total_debt": r.extracted_data[0].total_debt if r.extracted_data and len(r.extracted_data) > 0 else None
+            }
+            for r in reports
+        ]
+    }
 

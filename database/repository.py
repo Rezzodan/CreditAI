@@ -11,7 +11,7 @@ import json
 from database.models import (
     Base, CreditReport, ExtractedData, CreditAccount,
     CreditInquiry, ReportDispute, GeneratedDocument,
-    ProcessingStats, ProcessingLog
+    ProcessingStats, ProcessingLog, MergedReport
 )
 from config.settings import settings
 
@@ -35,7 +35,8 @@ class DatabaseRepository:
     # ========== CreditReport методы ==========
     
     def create_report(self, filename: str, file_size: int, 
-                     bitrix_deal_id: Optional[int] = None) -> CreditReport:
+                     bitrix_deal_id: Optional[int] = None,
+                     client_id: Optional[str] = None) -> CreditReport:
         """Создаёт новую запись об отчёте"""
         session = self.get_session()
         try:
@@ -43,6 +44,7 @@ class DatabaseRepository:
                 original_filename=filename,
                 file_size=file_size,
                 bitrix_deal_id=bitrix_deal_id,
+                client_id=client_id,
                 processing_status='pending',
                 processing_start=datetime.utcnow()
             )
@@ -211,6 +213,21 @@ class DatabaseRepository:
         finally:
             session.close()
     
+    def get_documents_by_report(self, report_id: str) -> List[GeneratedDocument]:
+        """Получает все документы для отчёта"""
+        session = self.get_session()
+        try:
+            documents = session.query(GeneratedDocument).filter(
+                GeneratedDocument.report_id == report_id
+            ).all()
+            # Создаём копии объектов чтобы избежать DetachedInstanceError
+            result = []
+            for doc in documents:
+                result.append(doc)
+            return result
+        finally:
+            session.close()
+    
     # ========== ProcessingLog методы ==========
     
     def add_log(self, report_id: Optional[str], log_level: str, 
@@ -284,6 +301,90 @@ class DatabaseRepository:
                 })
             
             return {'by_bki': result}
+        finally:
+            session.close()
+    
+    # ========== Методы для работы с client_id ==========
+    
+    def get_reports_by_client(self, client_id: str) -> List[CreditReport]:
+        """Получает все отчёты одного клиента"""
+        from sqlalchemy.orm import joinedload
+        
+        session = self.get_session()
+        try:
+            reports = session.query(CreditReport).options(
+                joinedload(CreditReport.extracted_data),
+                joinedload(CreditReport.credit_accounts)
+            ).filter(
+                CreditReport.client_id == client_id,
+                CreditReport.processing_status == 'completed'
+            ).order_by(CreditReport.upload_date.desc()).all()
+            
+            # Делаем объекты "отсоединенными" но с загруженными relationships
+            session.expunge_all()
+            return reports
+        finally:
+            session.close()
+    
+    # ========== MergedReport методы ==========
+    
+    def create_merged_report(
+        self, 
+        client_id: str,
+        client_name: str,
+        source_report_ids: List[str],
+        bki_types: List[str],
+        avg_credit_score: float,
+        total_debt: float,
+        total_active_accounts: int,
+        max_delinquency_days: int,
+        final_tariff: str,
+        document_path: str,
+        file_size: int,
+        bitrix_deal_id: Optional[int] = None
+    ) -> MergedReport:
+        """Создаёт сводный отчёт"""
+        session = self.get_session()
+        try:
+            merged = MergedReport(
+                client_id=client_id,
+                client_name=client_name,
+                bitrix_deal_id=bitrix_deal_id,
+                source_report_ids=source_report_ids,
+                bki_types=bki_types,
+                avg_credit_score=avg_credit_score,
+                total_debt=total_debt,
+                total_active_accounts=total_active_accounts,
+                max_delinquency_days=max_delinquency_days,
+                final_recommended_tariff=final_tariff,
+                document_path=document_path,
+                file_size=file_size
+            )
+            session.add(merged)
+            session.commit()
+            session.refresh(merged)
+            return merged
+        except SQLAlchemyError as e:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+    
+    def get_merged_report(self, merged_id: str) -> Optional[MergedReport]:
+        """Получает сводный отчёт по ID"""
+        session = self.get_session()
+        try:
+            return session.query(MergedReport).filter(MergedReport.id == merged_id).first()
+        finally:
+            session.close()
+    
+    def get_merged_reports_by_client(self, client_id: str) -> List[MergedReport]:
+        """Получает все сводные отчёты клиента"""
+        session = self.get_session()
+        try:
+            return session.query(MergedReport).filter(
+                MergedReport.client_id == client_id
+            ).order_by(MergedReport.created_at.desc()).all()
         finally:
             session.close()
 

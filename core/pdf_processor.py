@@ -36,13 +36,13 @@ class PDFProcessor:
                         'text': page.extract_text() or '',
                         'words': [
                             {
-                                'text': word['text'],
-                                'x0': word['x0'],
-                                'y0': word['y0'],
-                                'x1': word['x1'],
-                                'y1': word['y1']
+                                'text': word.get('text', ''),
+                                'x0': word.get('x0', 0),
+                                'y0': word.get('y0', 0),
+                                'x1': word.get('x1', 0),
+                                'y1': word.get('y1', 0)
                             }
-                            for word in words
+                            for word in words if isinstance(word, dict)
                         ],
                         'width': page.width,
                         'height': page.height
@@ -157,6 +157,9 @@ class PDFProcessor:
         }
         
         return result
+
+
+
 
 
 

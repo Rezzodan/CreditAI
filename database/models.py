@@ -25,6 +25,7 @@ class CreditReport(Base):
     __tablename__ = 'credit_reports'
     
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    client_id = Column(String(255), nullable=True)  # Для группировки отчётов одного клиента
     bitrix_deal_id = Column(Integer, nullable=True)
     original_filename = Column(String(255), nullable=False)
     file_size = Column(Integer)
@@ -189,4 +190,28 @@ class ProcessingLog(Base):
     
     # Связи
     report = relationship("CreditReport", back_populates="logs")
+
+
+class MergedReport(Base):
+    """Таблица: Сводные отчёты (объединение данных от разных БКИ)"""
+    __tablename__ = 'merged_reports'
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    client_id = Column(String(255), nullable=False)
+    client_name = Column(String(255))
+    bitrix_deal_id = Column(Integer, nullable=True)
+    source_report_ids = Column(JSON)  # Список ID исходных отчётов
+    bki_types = Column(JSON)  # Список типов БКИ
+    
+    # Сводные данные
+    avg_credit_score = Column(Float)
+    total_debt = Column(Float)
+    total_active_accounts = Column(Integer)
+    max_delinquency_days = Column(Integer)
+    final_recommended_tariff = Column(String(50))  # Premium, Optimum
+    
+    # Метаданные
+    created_at = Column(DateTime, default=datetime.utcnow)
+    document_path = Column(Text)
+    file_size = Column(Integer)
 

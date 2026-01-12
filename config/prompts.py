@@ -216,3 +216,8 @@ def get_letter_generation_prompt(bki_type: str, errors: list, client_data: dict)
 
 
 
+
+
+
+
+
