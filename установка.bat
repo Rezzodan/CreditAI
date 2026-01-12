@@ -118,26 +118,26 @@ if %errorlevel% neq 0 (
     echo.
     echo Для работы AI необходимо:
     echo 1. Установить Ollama с https://ollama.com
-    echo 2. Загрузить модель: ollama pull qwen2.5-coder:1.5b
+    echo 2. Загрузить модель: ollama pull qwen2.5:3b
     echo.
 ) else (
     ollama --version
     echo ✅ Ollama установлен
     echo.
-    echo Проверка модели qwen2.5-coder:1.5b...
-    ollama list | findstr "qwen2.5-coder:1.5b" >nul 2>&1
+    echo Проверка модели qwen2.5:3b...
+    ollama list | findstr "qwen2.5:3b" >nul 2>&1
     if %errorlevel% neq 0 (
-        echo ⚠️  Модель qwen2.5-coder:1.5b не найдена
+        echo ⚠️  Модель qwen2.5:3b не найдена
         echo.
         set /p "pullmodel=Загрузить модель сейчас? (Y/N): "
         if /i "%pullmodel%"=="Y" (
             echo Загрузка модели (может занять несколько минут^)...
-            ollama pull qwen2.5-coder:1.5b
+            ollama pull qwen2.5:3b
         ) else (
-            echo Загрузите модель позже: ollama pull qwen2.5-coder:1.5b
+            echo Загрузите модель позже: ollama pull qwen2.5:3b
         )
     ) else (
-        echo ✅ Модель qwen2.5-coder:1.5b установлена
+        echo ✅ Модель qwen2.5:3b установлена
     )
 )
 echo.
